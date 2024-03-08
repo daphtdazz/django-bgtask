@@ -1,0 +1,30 @@
+{% load static %}
+{% if not bgtask %}
+-
+{% else %}
+{% with initialTasksJsonId="initialTasksJson-"|add:bgtask.id %}
+{{ bgtask|json_script:initialTasksJsonId }}
+{% endwith %}
+<script src="{% static 'bgtask/js/bgtask-once.js' %}"></script>
+<a href="{% url 'bgtask:tasks' %}?object_id={{bgtask.acted_on_object_id}}">
+    <div id="bgtask-column-{{ bgtask.id }}">
+        {% include 'bgtask/progress.html' %}
+    </div>
+</a>
+<script>
+(() => {
+    const poller = BGTaskPoller.sharedInstance("{% url 'bgtask:tasks' %}");
+
+    const originalTask = JSON.parse(
+        document.getElementById("initialTasksJson-{{ bgtask.id }}").textContent
+    );
+    BGTaskPoller.normalizeTask(originalTask);
+
+    const tpd = new TaskProgressDiv(
+        "bgtask-column-{{ bgtask.id }}",
+        originalTask,
+    );
+    tpd.attachToPoller(poller);
+})();
+</script>
+{% endif %}

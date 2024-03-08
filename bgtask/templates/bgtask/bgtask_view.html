@@ -1,0 +1,74 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block extrahead %}
+{{ block.super }}
+<style>
+  hr {
+    margin-top: 15px;
+    margin-bottom: 15px;
+  }
+.bgtask-detail-div {
+  background-color: #f7f9fd;
+  border-radius: 5px;
+  padding: 10px 10px 15px;
+  margin: 15px 0;
+}
+.bgtask-error-row-traceback {
+  white-space: pre;
+  font-family: monospace;
+  font-size: smaller;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+
+<template id="bgtask-error-row">
+  <tr>
+    <td class="bgtask-error-row-group"></td>
+    <td class="bgtask-error-row-num"></td>
+    <td class="bgtask-error-row-time"></td>
+    <td class="bgtask-error-row-error"></td>
+    <td class="bgtask-error-row-traceback"></td>
+  </tr>
+</template>
+
+<template id="task-template">
+  <div class="bgtask-detail-div">
+    <h2 class="bgtask-name"></h2>
+    <p class="bgtask-text-status"></p>
+    {% include 'bgtask/progress.html' %}
+    <div class="bgtask-errors-div" style="display: none;">
+      <h3>Errors</h3>
+      <table class="bgtask-errors-table">
+        <tr>
+          <th>Failed group</th>
+          <th># items failed</th>
+          <th>Time</th>
+          <th>Error</th>
+          <th>Traceback</th>
+        </tr>
+    </div>
+  </div>
+</template>
+<div id="content-main">
+</div>
+
+<!-- JS CODE -->
+{{ tasks|json_script:"initialTasksJson" }}
+<script src="{% static 'bgtask/js/bgtask.js' %}"></script>
+<script>
+(() => {
+  const tasks = JSON.parse(document.getElementById("initialTasksJson").textContent);
+  for (const [taskId, task] of Object.entries(tasks)) {
+    BGTaskPoller.normalizeTask(task);
+
+    // Set up the progress bar
+    const poller = BGTaskPoller.sharedInstance("{% url 'bgtask:tasks' %}");
+    const dvd = new BGTaskDetailViewDiv(cloneTemplateInto('task-template', 'content-main'), task);
+    dvd.attachToPoller(poller);
+  }
+})();
+</script>
+{% endblock %}
