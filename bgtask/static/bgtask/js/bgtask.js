@@ -21,7 +21,7 @@ class ProgressState {
     constructor(element, {value, max} = {value: null, max: null}) {
         this.element = element;
 
-        this.timerId = null;
+        this.animationFrameRequestId = null;
 
         this.max = max;
         // set it immediately initially
@@ -76,35 +76,40 @@ class ProgressState {
       const now = new Date();
       const completionDue = new Date(now.getTime() + REFRESH_PERIOD_MS + PROGRESS_REFRESH_MS);
       const initialMSToCompletion = completionDue - now;
+      const completionDueHighRes = performance.now() + initialMSToCompletion;
       const previousValue = currentValue;
 
-      const updateProgress = () => {
-          const now = new Date();
-          const msRemaining = completionDue - now;
-          const newValue = previousValue + (
-              ((initialMSToCompletion - msRemaining) / initialMSToCompletion)
-              * (value - previousValue)
-          );
+      let startTimestamp = null;
 
-          if (completionDue <= now || Math.abs((value - newValue) / this.progEle.max) < 0.001) {
-            // console.info("Reached target value", value, newValue, completionDue, now);
-            this.progEle.value = value;
-            this._cancelTimer();
-            return;
-          }
+      const updateProgressStep = (now) => {
+        if (startTimestamp === null) {
+          startTimestamp = now;
+          this.animationFrameRequestId = window.requestAnimationFrame(updateProgressStep);
+          return;
+        }
+        const msRemaining = completionDueHighRes - now;
+        const newValue = previousValue + (
+            ((initialMSToCompletion - msRemaining) / initialMSToCompletion)
+            * (value - previousValue)
+        );
 
-          this.progEle.value = newValue;
-      };
+        if (completionDue <= now || Math.abs((value - newValue) / this.progEle.max) < 0.001) {
+          this.progEle.value = value;
+          return;
+        }
 
-      // console.info("setInterval updateProgress", initialMSToCompletion);
-      this.timerId = setInterval(updateProgress, PROGRESS_REFRESH_MS);
+        this.progEle.value = newValue;
+        this.animationFrameRequestId = window.requestAnimationFrame(updateProgressStep);
+      }
+
+      this.animationFrameRequestId = window.requestAnimationFrame(updateProgressStep);
     }
 
     _cancelTimer() {
-        if (this.timerId !== null) {
-            clearInterval(this.timerId);
+        if (this.animationFrameRequestId !== null) {
+          window.cancelAnimationFrame(this.animationFrameRequestId)
         }
-        this.timerId = null;
+        this.animationFrameRequestId = null;
     }
 }
 
