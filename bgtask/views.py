@@ -10,15 +10,8 @@ from .models import BackgroundTask
 Q_NONE = Q(pk__in=[])
 
 
-def task_dict(task):
-    task_dict = model_to_dict(task)
-    if "stack_context" in task_dict:
-        del task_dict["stack_context"]
-    return {"id": str(task.id), "updated": task.updated.isoformat(), **task_dict}
-
-
 def _tasks_dict(tasks):
-    td = {str(task.id): task_dict(task) for task in tasks}
+    td = {str(task.id): task.task_dict for task in tasks}
     return td
 
 

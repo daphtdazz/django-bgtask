@@ -1,12 +1,10 @@
-from django.db.models import FileField, ForeignKey, Model, TextField, CASCADE
+from uuid import uuid4
+
+from django.db.models import CharField, Model, TextField, UUIDField
 
 
-class DjangoModelConverterTestModel(Model):
-    a_file = FileField(null=True, blank=True, upload_to='tests-django-app-files')
-    parent = ForeignKey('DMCTestParentModel', on_delete=CASCADE, related_name='children', null=True)
-    child_text = TextField(blank=True, default='')
-
-
-class DMCTestParentModel(Model):
-    parent_text = TextField(blank=True, default='')
+class ModelWithBackgroundActions(Model):
+    id = UUIDField(default=uuid4, primary_key=True, editable=False)
+    name = CharField()
+    text = TextField(blank=True, default='')
 

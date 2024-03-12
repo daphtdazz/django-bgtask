@@ -21,7 +21,7 @@ INSTALLED_APPS = [
 ]
 ```
 
-And mount the amdin monitoring URLs:
+And mount the admin monitoring URLs:
 
 ```
 urlpatterns = [

@@ -56,45 +56,47 @@ class ProgressState {
       this._cancelTimer();
       const currentValue = this.progEle.value || 0;
       if (value === null || value === undefined) {
+          // console.info("null value");
           this.progEle.removeAttribute("value");
-          this._clearState();
           return
       }
       if (value >= this.max) {
+          // console.info("greater than max", value, this.max);
           this.progEle.value = this.max;
-          this._clearState();
           return;
       }
       if (currentValue === value) {
-          this._clearState();
+          // console.info("already at value", currentValue, value);
           return;
       }
 
       // completion due in the refresh period plus a bit so that we don't get there too soon
       // and cause a visible stop: we would rather the next update arrived before we reached the
       // target value
-      const completionDue = new Date(new Date().getTime() + REFRESH_PERIOD_MS + 500);
-      const initialMSToCompletion = completionDue - new Date();
+      const now = new Date();
+      const completionDue = new Date(now.getTime() + REFRESH_PERIOD_MS + PROGRESS_REFRESH_MS);
+      const initialMSToCompletion = completionDue - now;
       const previousValue = currentValue;
 
       const updateProgress = () => {
           const now = new Date();
-          if (completionDue <= now) {
-              this.progEle.value = value;
-              this._cancelTimer();
-              this._clearState();
-              return;
-          }
-
           const msRemaining = completionDue - now;
-
           const newValue = previousValue + (
               ((initialMSToCompletion - msRemaining) / initialMSToCompletion)
               * (value - previousValue)
           );
+
+          if (completionDue <= now || Math.abs((value - newValue) / this.progEle.max) < 0.001) {
+            // console.info("Reached target value", value, newValue, completionDue, now);
+            this.progEle.value = value;
+            this._cancelTimer();
+            return;
+          }
+
           this.progEle.value = newValue;
       };
 
+      // console.info("setInterval updateProgress", initialMSToCompletion);
       this.timerId = setInterval(updateProgress, PROGRESS_REFRESH_MS);
     }
 
@@ -103,9 +105,6 @@ class ProgressState {
             clearInterval(this.timerId);
         }
         this.timerId = null;
-    }
-
-    _clearState() {
     }
 }
 

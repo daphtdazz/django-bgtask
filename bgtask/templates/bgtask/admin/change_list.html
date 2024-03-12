@@ -1,0 +1,29 @@
+{% extends "admin/change_list.html" %}
+{% load static %}
+
+{% block extrastyle %}
+{{ block.super }}
+<link rel="stylesheet" type="text/css" href="{% static "admin/css/forms.css" %}">
+{% endblock %}
+
+{% block object-tools %}
+{{ block.super }}
+<div>
+  {% if admin_bg_tasks|length %}
+  <h3>Action background tasks</h3>
+  <table>
+    <thead>
+      <tr><th>Task name</th><th>Started</th><th>Status</th></tr>
+    </thead>
+    <tbody>
+      {% for bgt in admin_bg_tasks %}
+      {% with bgtask=bgt.task_dict %}
+      <tr class="bgtask-row"><td><a href="{% url 'admin:bgtask_backgroundtask_change' bgtask.id %}">{{ bgt.admin_description }}</a></td><td>{{ bgt.started_at|timesince }} ago</td><td>
+      {% include "bgtask/bg_changelist_status_column.html" %}</td></tr>
+      {% endwith %}
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+{% endblock %}

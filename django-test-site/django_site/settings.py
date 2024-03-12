@@ -1,6 +1,7 @@
 """
 This is the settings for a test app that the django converter tests can use.
 """
+import os
 
 from pathlib import Path
 
@@ -30,6 +31,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'bgtask',
+    "django_app",
 ]
 
 MIDDLEWARE = [
@@ -114,12 +116,49 @@ USE_TZ = True
 STATIC_URL = '/static/'
 
 
-# converters.contrib.country looks here for extra aliases, here are some examples
-COUNTRY_ALIASES = {
-    'GB': ['UK', 'Great Britain'],
-    'AX': ['Åland Islands', 'Aland Islands'],
-    'XK': ['Kosovo', 'Kosovo, Serbia'],
-    'TW': ['Taiwan', 'Taiwan, China', 'Chinese Taipei'],
-    'CZ': ['Czech Republic', 'The Czech Republic'],
-    'KR': ['Korea (the Republic of)', 'Korea, South'],
+# Logging
+LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")
+LOG_FORMATTER = os.environ.get("LOG_FORMATTER", "simple")
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "filters": {
+    },
+    "formatters": {
+        "verbose": {
+            "format": "%(levelname)s %(asctime)s %(module)s %(process)d %(thread)d %(message)s"
+        },
+        "simple": {"format": "%(levelname)s %(message)s"},
+        "simple_pretty": {
+            "class": "colorlog.ColoredFormatter",
+            "format": os.environ.get("PRETTY_LOG_FORMAT", "%(log_color)s%(levelname)-8s %(message)s"),
+            "log_colors": {
+                "DEBUG": "bold_white",
+                "INFO": "white",
+                "WARNING": "yellow",
+                "ERROR": "red",
+                "CRITICAL": "bold_red",
+            },
+        },
+    },
+    "handlers": {
+        "console": {
+            "level": LOG_LEVEL,
+            "class": "logging.StreamHandler",
+            "formatter": LOG_FORMATTER,
+        },
+        "null": {"class": "logging.NullHandler"},
+    },
+    "root": {
+        "level": LOG_LEVEL,
+        "handlers": ["console"],
+        "propagate": False,
+        "filters": [],
+    },
+    "loggers": {
+        "django.security.DisallowedHost": {"handlers": ["null"], "propagate": False},
+        "django.request": {"level": "ERROR"},
+        "django.db.backends": {"level": "DEBUG"},
+    },
 }

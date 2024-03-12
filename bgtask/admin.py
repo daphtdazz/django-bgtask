@@ -2,7 +2,6 @@ from django.contrib import admin
 from django.template.loader import render_to_string
 
 from .models import BackgroundTask
-from .views import task_dict
 
 
 def background_task_status(obj):
@@ -15,7 +14,7 @@ def background_task_status(obj):
         bgtask = bgtasks.first()
 
     output = render_to_string(
-        "bgtask/bg_changelist_status_column.html", {"bgtask": bgtask and task_dict(bgtask)}
+        "bgtask/bg_changelist_status_column.html", {"bgtask": bgtask and bgtask.task_dict}
     )
     return output
 

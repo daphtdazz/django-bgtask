@@ -8,6 +8,7 @@ import uuid
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
 from django.db import models, transaction
+from django.forms.models import model_to_dict
 from django.utils import timezone
 
 from model_utils import Choices
@@ -75,6 +76,11 @@ class BackgroundTask(models.Model):
         ordering = ["created", "id"]
 
     @property
+    def task_dict(self):
+        task_dict = model_to_dict(self)
+        return {"id": str(self.id), "updated": self.updated.isoformat(), **task_dict}
+
+    @property
     def num_failed_steps(self):
         return sum(error.get("num_failed_steps", 0) for error in self.errors)
 
@@ -104,10 +110,10 @@ class BackgroundTask(models.Model):
 
     @locked
     @only_if_state(STATES.running)
-    def succeed(self, result):
+    def succeed(self, result=""):
         log.info("%s succeeded.", self)
         self.state = self.STATES.success
-        self.completion = 1
+        self.steps_completed = self.steps_to_complete
         self.completed_at = timezone.now()
         self.result = self.serialize_result(result)
         self.save()
