@@ -4,6 +4,7 @@ import os
 import time
 import traceback
 import uuid
+from contextlib import contextmanager
 
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
@@ -20,9 +21,19 @@ log = logging.getLogger(__name__)
 def locked(meth):
     @functools.wraps(meth)
     def _locked_meth(self, *args, **kwargs):
+        if getattr(self, "_locked", False):
+            return meth(self, *args, **kwargs)
+
         with transaction.atomic():
             BackgroundTask.objects.filter(id=self.id).select_for_update().only("id").get()
-            return meth(self, *args, **kwargs)
+            self.refresh_from_db()
+
+            # Mark as locked in case we are called recursively
+            self._locked = True
+            try:
+                return meth(self, *args, **kwargs)
+            finally:
+                self._locked = False
 
     return _locked_meth
 
@@ -44,7 +55,22 @@ def only_if_state(state):
 
 class BackgroundTask(models.Model):
     id = models.UUIDField(primary_key=True, editable=False, default=uuid.uuid4)
-    name = models.CharField(max_length=1000)
+    name = models.CharField(
+        max_length=1000,
+        help_text=(
+            "Name (or type) of this task, is not unique "
+            "per task instance but generally per task functionality"
+        ),
+    )
+    namespace = models.CharField(
+        max_length=1000,
+        default="",
+        blank=True,
+        help_text=(
+            "Optional namespace that can be used to avoid having to make names unique across an "
+            "entire codebase, allowing them to be shorter and human readable"
+        ),
+    )
 
     STATES = Choices("not_started", "running", "success", "partial_success", "failed")
     state = models.CharField(max_length=16, default=STATES.not_started, choices=STATES)
@@ -88,6 +114,24 @@ class BackgroundTask(models.Model):
     def incomplete(self):
         return self.state in [self.STATES.not_started, self.STATES.running]
 
+    @contextmanager
+    def runs_single_step(self):
+        try:
+            yield
+        except Exception as exc:
+            self.steps_failed(1, error=exc)
+        else:
+            self.add_successful_steps(1)
+
+    @contextmanager
+    def finishes(self):
+        try:
+            yield
+        except Exception as exc:
+            self.fail(exc)
+        else:
+            self.succeed()
+
     @locked
     @only_if_state(STATES.not_started)
     def start(self):
@@ -110,7 +154,7 @@ class BackgroundTask(models.Model):
 
     @locked
     @only_if_state(STATES.running)
-    def succeed(self, result=""):
+    def succeed(self, result=None):
         log.info("%s succeeded.", self)
         self.state = self.STATES.success
         self.steps_completed = self.steps_to_complete
@@ -126,8 +170,8 @@ class BackgroundTask(models.Model):
             log.info("Finishing as success with no errors")
             self.state = self.STATES.success
         elif self.steps_to_complete is None:
-            log.info("Finishing as failure with no steps to complete configured")
-            self.state = self.STATES.failed
+            log.info("Finishing as success with no steps to complete configured")
+            self.state = self.STATES.success
         elif self.num_failed_steps == self.steps_to_complete:
             log.info("Finishing as failure with all steps failed")
             self.state = self.STATES.failed
@@ -135,11 +179,13 @@ class BackgroundTask(models.Model):
             log.info("Finishing as partial success with some steps failed")
             self.state = self.STATES.partial_success
 
+        self.completed_at = timezone.now()
+        self.save()
+
     @locked
     def add_successful_steps(self, num_steps):
         self.steps_completed += num_steps
-        self._maybe_finish()
-        self.save()
+        self._finish_or_save()
 
     @locked
     def steps_failed(self, num_steps, steps_identifier=None, error=None):
@@ -154,8 +200,7 @@ class BackgroundTask(models.Model):
         error_dict.update(self._error_dict_for_error(error))
 
         self.errors.append(error_dict)
-        self._maybe_finish()
-        self.save()
+        self._finish_or_save()
 
     def dispatch(self):
         # double fork to avoid zombies
@@ -228,9 +273,12 @@ class BackgroundTask(models.Model):
             )
         return error_dict
 
-    def _maybe_finish(self):
-        if self.steps_to_complete is None:
-            return
-
-        if self.steps_completed >= self.steps_to_complete:
+    def _finish_or_save(self):
+        if (
+            self.steps_to_complete is not None
+            and self.steps_completed is not None
+            and self.steps_completed >= self.steps_to_complete
+        ):
             self.finish()
+        else:
+            self.save()

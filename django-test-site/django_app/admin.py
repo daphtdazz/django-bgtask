@@ -59,6 +59,8 @@ def do_something_in_the_background(bg_task, request, queryset):
 
 @admin.register(ModelWithBackgroundActions)
 class ModelWithBackgroundActionsAdmin(BGTaskModelAdmin):
+    change_list_template = "bgtask/admin/change_list.html"
+
     list_display = ["name", "text"]
 
     actions = [

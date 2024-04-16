@@ -21,8 +21,7 @@ def bgtask_admin_action(func=None):
         @wraps(func)
         def bgtask_admin_action_wrapper(self, request, queryset):
             log.info("Running func %s", func.__name__)
-            bg_task = BackgroundTask.objects.create(name=task_name)
-            bg_task.start()
+            bg_task = self.start_bgtask(task_name)
 
             self.message_user(request, "Started background task", level=INFO)
 

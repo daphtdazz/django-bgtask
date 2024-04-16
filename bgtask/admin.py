@@ -24,6 +24,9 @@ background_task_status.__name__ = "Task Status"
 
 @admin.register(BackgroundTask)
 class BackgroundTaskAdmin(admin.ModelAdmin):
-    list_filter = ["state", "result"]
-    list_display = ("created", background_task_status, "result", "completed_at")
+    list_filter = ["state", "namespace", "name"]
+    list_display = ("created", "namespace_name", background_task_status, "result", "completed_at")
     ordering = ["-created"]
+
+    def namespace_name(self, bgtask):
+        return ".".join(f for f in [bgtask.namespace, bgtask.name] if f)

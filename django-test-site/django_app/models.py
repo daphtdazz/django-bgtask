@@ -8,3 +8,6 @@ class ModelWithBackgroundActions(Model):
     name = CharField()
     text = TextField(blank=True, default='')
 
+    class Meta:
+        verbose_name = "Models with background action"
+
