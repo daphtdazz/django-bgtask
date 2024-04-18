@@ -8,7 +8,7 @@
 
 {% block object-tools %}
 {{ block.super }}
-<div>
+<div style="margin-bottom: 10px;">
   <h3>Action background tasks</h3>
   {% if not admin_bg_tasks|length %}
   <p class="help" style="font-style: italic;">No recent background tasks</p>
@@ -20,7 +20,7 @@
     <tbody>
       {% for bgt in admin_bg_tasks %}
       {% with bgtask=bgt.task_dict %}
-      <tr class="bgtask-row"><td><a href="{% url 'admin:bgtask_backgroundtask_change' bgtask.id %}">{{ bgt.admin_description }}</a></td><td>{{ bgt.started_at|timesince }} ago</td><td>{% if bgt.completed_at %}{{ bgt.completed_at|timesince }} ago{% else %}–{% endif %}</td><td>
+      <tr class="bgtask-row"><td><a href="{% url 'admin:bgtask_backgroundtask_change' bgtask.id %}">{{ bgt.admin_description }}</a></td><td>{{ bgt.started_at|timesince }} ago</td><td>{% include "bgtask/bg_completed_column.html" %}</td><td>
       {% include "bgtask/bg_changelist_status_column.html" %}</td></tr>
       {% endwith %}
       {% endfor %}

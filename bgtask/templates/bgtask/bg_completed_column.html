@@ -1,0 +1,24 @@
+{% load static %}
+{% if not bgtask %}
+–
+{% else %}
+{% with initialTasksJsonId="initialTasksJson-completedcolumn-"|add:bgtask.id %}
+{{ bgtask|json_script:initialTasksJsonId }}
+{% endwith %}
+<script src="{% static 'bgtask/js/bgtask-once.js' %}"></script>
+<span></span>
+<script>
+(() => {
+    const completedSpan = document.currentScript.previousElementSibling;
+
+    const originalTask = JSON.parse(
+        document.getElementById("initialTasksJson-completedcolumn-{{ bgtask.id }}").textContent
+    );
+    BGTaskPoller.normalizeTask(originalTask);
+
+    const statusCol = new TaskFieldElement(completedSpan, "completed_at_time_ago", originalTask);
+    const poller = BGTaskPoller.sharedInstance("{% url 'bgtask:tasks' %}");
+    statusCol.attachToPoller(poller);
+})();
+</script>
+{% endif %}

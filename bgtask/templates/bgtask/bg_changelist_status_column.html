@@ -6,11 +6,7 @@
 {{ bgtask|json_script:initialTasksJsonId }}
 {% endwith %}
 <script src="{% static 'bgtask/js/bgtask-once.js' %}"></script>
-{% if bgtask.acted_on_object_id %}
-<a href="{% url 'bgtask:tasks' %}?object_id={{bgtask.acted_on_object_id}}">
-{% else %}
 <a href="{% url 'admin:bgtask_backgroundtask_change' bgtask.id %}">
-{% endif %}
     <div id="bgtask-column-{{ bgtask.id }}">
         {% include 'bgtask/progress.html' %}
     </div>

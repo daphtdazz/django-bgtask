@@ -14,6 +14,33 @@ const TIME_TO_REDUCED_REFRESH_PERIOD_S = 300;
 const REDUCED_REFRESH_PERIOD_S = 60;
 const PROGRESS_REFRESH_MS = 100;
 
+function millisecondsToTimeAgoString(ms) {
+  const seconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+
+  if (days > 0) {
+    if (days === 1) {
+      return `${days} day, ${hours % 24} hours ago`;
+    }
+    return `${days} days ago`;
+  }
+  if (hours > 0) {
+    if (hours === 1) {
+      return `${hours} hour, ${minutes % 60} minutes ago`;
+    }
+    return `${hours} hours ago`;
+  }
+  if (minutes > 0) {
+    if (minutes === 1) {
+      return `${minutes} minute, ${seconds % 60} seconds ago`;
+    }
+    return `${minutes} minutes ago`;
+  }
+  return `${seconds} seconds ago`;
+}
+
 // -------------------------------------------------------------------------------------------------
 // Generic live-looking progress bar manager.
 // -------------------------------------------------------------------------------------------------
@@ -140,7 +167,6 @@ class TaskProgressDiv {
   }
 
   updateFromTask(task) {
-    // console.log(`TaskProgressDiv.updateFromTask`, task);
     this.div.title = "";
 
     switch (task.state) {
@@ -152,7 +178,14 @@ class TaskProgressDiv {
       case "failed":
         this._hideProgress();
         this._showState();
-        this._addTitle("Task failed");
+        let title = "Task failed";
+        for (const error of task.errors) {
+          if (error.traceback) {
+            title = `${title}\n${error.traceback}\n\n${error.error_message}`;
+            break;
+          }
+        }
+        this._addTitle(title);
         break;
       case "success":
         this._hideProgress();
@@ -202,6 +235,26 @@ class TaskProgressDiv {
   }
   _showState() {
     this.stateEle.style.display = null;
+  }
+}
+
+// -------------------------------------------------------------------------------------------------
+// Manage an element which just shows one field from the task
+// -------------------------------------------------------------------------------------------------
+class TaskFieldElement {
+  constructor (element, fieldName, task) {
+    this.taskId = task.id;
+    this.element = element;
+    this.fieldName = fieldName;
+    this.updateFromTask(task);
+  }
+
+  attachToPoller(poller) {
+    poller.monitorTask(this.taskId, task => this.updateFromTask(task));
+  }
+
+  updateFromTask(task) {
+    this.element.innerHTML = task[this.fieldName];
   }
 }
 
@@ -299,6 +352,14 @@ class BGTaskPoller {
 
   static normalizeTask(task) {
     task.updated = new Date(task.updated);
+
+    if (task.completed_at !== null) {
+      task.completed_at = new Date(task.completed_at);
+      const completedTimeAgoMS = Date.now() - task.completed_at.getTime();
+      task.completed_at_time_ago = millisecondsToTimeAgoString(completedTimeAgoMS);
+    } else {
+      task.completed_at_time_ago = "–";
+    }
   }
 
   static sharedInstance(baseURL) {
@@ -357,7 +418,9 @@ class BGTaskPoller {
     const req = new XMLHttpRequest();
     const self = this;
     req.addEventListener("load", function () { self._receivePoll(this); });
-    const url = `${this.baseURL}?tasks=${Object.keys(this.taskCallbacks).join(",")}`;
+    const taskIds = Object.keys(this.taskCallbacks).join(",");
+    const url = `${this.baseURL}?tasks=${taskIds}`;
+    console.log(`Poll for tasks ${taskIds}`);
     req.open("GET", url);
     req.setRequestHeader('Accept', 'application/json');
     req.send();
