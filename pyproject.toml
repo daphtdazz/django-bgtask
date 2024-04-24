@@ -4,7 +4,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "django-admin-background-task"
-version = "0.3.0"
+version = "0.3.1"
 description = "A set of tools for django apps to persist and monitor the status of background tasks"
 authors = [
     "David Park <david@greenparksoftware.co.uk>",
@@ -25,7 +25,6 @@ python = ">=3.11,<4.0"
 Django = "~4.2"
 django-model-utils = "~4.4.0"
 # TEST VERSIONS INSERTION POINT END
-psycopg2 = "^2.9.9"
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=7.0.1"
