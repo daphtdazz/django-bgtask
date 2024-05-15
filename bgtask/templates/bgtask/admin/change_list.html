@@ -7,7 +7,6 @@
 {% endblock %}
 
 {% block object-tools %}
-{{ block.super }}
 <div style="margin-bottom: 10px;">
   <h3>Action background tasks</h3>
   {% if not admin_bg_tasks|length %}
@@ -28,4 +27,5 @@
   </table>
   {% endif %}
 </div>
+{{ block.super }}
 {% endblock %}
