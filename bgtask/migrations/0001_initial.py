@@ -21,7 +21,7 @@ class Migration(migrations.Migration):
                 ('updated', models.DateTimeField(auto_now=True)),
                 ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
                 ('name', models.CharField(max_length=1000)),
-                ('state', models.CharField(choices=[('not_started', 'not_started'), ('running', 'running'), ('success', 'success'), ('partial_success', 'partial_success'), ('failed', 'failed')], default='not_started', max_length=16)),
+                ('state', models.CharField(choices=[('not_started', 'not_started'), ('queued', 'queued'), ('running', 'running'), ('success', 'success'), ('partial_success', 'partial_success'), ('failed', 'failed')], default='not_started', max_length=16)),
                 ('steps_to_complete', models.PositiveIntegerField(blank=True, help_text='The number of steps in the task for it to be completed.', null=True)),
                 ('steps_completed', models.PositiveIntegerField(blank=True, help_text='The number of steps completed so far by this task', null=True)),
                 ('started_at', models.DateTimeField(blank=True, null=True)),

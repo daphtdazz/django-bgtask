@@ -41,10 +41,11 @@ def locked(meth):
 def only_if_state(state):
     def only_if_state_decorator(meth):
         def only_if_state_wrapper(self, *args, **kwargs):
-            if self.state != state:
+            states = (state,) if isinstance(state, str) else tuple(state)
+            if self.state not in states:
                 raise RuntimeError(
-                    "%s cannot execute %s as in state %s not %s"
-                    % (self, meth.__name__, self.state, state)
+                    "%s cannot execute %s as in state %s not one of %s"
+                    % (self, meth.__name__, self.state, states)
                 )
             return meth(self, *args, **kwargs)
 
@@ -72,7 +73,7 @@ class BackgroundTask(models.Model):
         ),
     )
 
-    STATES = Choices("not_started", "running", "success", "partial_success", "failed")
+    STATES = Choices("not_started", "queued", "running", "success", "partial_success", "failed")
     state = models.CharField(max_length=16, default=STATES.not_started, choices=STATES)
     steps_to_complete = models.PositiveIntegerField(
         null=True, blank=True, help_text="The number of steps in the task for it to be completed."
@@ -81,6 +82,7 @@ class BackgroundTask(models.Model):
         null=True, blank=True, help_text="The number of steps completed so far by this task"
     )
 
+    queued_at = models.DateTimeField(null=True, blank=True)
     started_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
     result = models.JSONField(null=True, blank=True, help_text="The result(s) of the task, if any")
@@ -104,7 +106,12 @@ class BackgroundTask(models.Model):
     @property
     def task_dict(self):
         task_dict = model_to_dict(self)
-        return {"id": str(self.id), "updated": self.updated.isoformat(), **task_dict}
+        return {
+            "id": str(self.id),
+            "updated": self.updated.isoformat(),
+            "position_in_queue": self.get_position_in_queue(),
+            **task_dict,
+        }
 
     @property
     def num_failed_steps(self):
@@ -113,6 +120,28 @@ class BackgroundTask(models.Model):
     @property
     def incomplete(self):
         return self.state in [self.STATES.not_started, self.STATES.running]
+
+    def get_position_in_queue(self):
+        if self.state != self.STATES.queued:
+            return None
+
+        if (
+            BackgroundTask.objects.filter(
+                queued_at__gt=self.queued_at,
+            )
+            .exclude(state=self.STATES.not_started)
+            .exclude(state=self.STATES.queued)
+            .exists()
+        ):
+            # More recent tasks have started, assume we're next (either that or we're stuck)
+            return 0
+
+        # Otherwise approximate queue position as the number of tasks that were queued before us
+        # and are still in the queue. So if there is nothing in front of us we are 0 in the queue.
+        assert self.queued_at
+        return BackgroundTask.objects.filter(
+            queued_at__lt=self.queued_at, state=self.STATES.queued
+        ).count()
 
     @contextmanager
     def runs_single_step(self):
@@ -134,8 +163,16 @@ class BackgroundTask(models.Model):
 
     @locked
     @only_if_state(STATES.not_started)
+    def queue(self):
+        log.info("Background Task queueing: %s", self.id)
+        self.state = self.STATES.queued
+        self.queued_at = timezone.now()
+        self.save()
+
+    @locked
+    @only_if_state((STATES.not_started, STATES.queued))
     def start(self):
-        log.info("%s starting", self)
+        log.info("Background Task starting: %s", self.id)
         self.state = self.STATES.running
         self.started_at = timezone.now()
         self.save()
@@ -144,7 +181,7 @@ class BackgroundTask(models.Model):
     @only_if_state(STATES.running)
     def fail(self, exc):
         """Call to indicate a complete and final failure of the task"""
-        log.info("%s failed: %s", self, exc)
+        log.info("Background Task failed: %s %s", self.id, exc)
         self.state = self.STATES.failed
         self.completed_at = timezone.now()
         self.errors.append(

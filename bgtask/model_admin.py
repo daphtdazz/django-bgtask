@@ -13,9 +13,14 @@ from .models import BackgroundTask
 class BGTaskModelAdmin(admin.ModelAdmin):
     # This is not overridden to avoid messing with the implicit logic for finding change list
     # templates that ModelAdmin uses. So you either need to specify this yourself on your
-    # subclass or you need to extend from this in your custom template.
+    # subclass or you need to extend from this in your custom template (which you can install at
+    # <your-app>/templates/admin/<your-app>/<your-model>/change_list.html)
     #
     # change_list_template = "bgtask/admin/change_list.html"
+    #
+    # Set this to tell the admin change list page which background tasks to show in the table.
+    #
+    # bgtask_names = ["task a", "task b"]
 
     # ----------------------------------------------------------------------------------------------
     # Class API
@@ -41,12 +46,13 @@ class BGTaskModelAdmin(admin.ModelAdmin):
     # API for subclasses
     # ----------------------------------------------------------------------------------------------
     def start_bgtask(self, name, **kwargs):
-        bgtask = BackgroundTask.objects.create(
-            name=name,
-            namespace=self._bgtask_namespace,
-            **kwargs,
-        )
+        bgtask = self._create_bgtask(name=name, **kwargs)
         bgtask.start()
+        return bgtask
+
+    def queue_bgtask(self, name, **kwargs):
+        bgtask = self._create_bgtask(name=name, **kwargs)
+        bgtask.queue()
         return bgtask
 
     # ----------------------------------------------------------------------------------------------
@@ -78,6 +84,12 @@ class BGTaskModelAdmin(admin.ModelAdmin):
 
             next_action = next_action.__wrapped__
 
+    def _create_bgtask(self, **kwargs):
+        return BackgroundTask.objects.create(
+            namespace=self._bgtask_namespace,
+            **kwargs,
+        )
+
     def _admin_bg_tasks(self, request):
         task_name_to_desc = {}
         for action, action_name, action_description in self.get_actions(request).values():
@@ -101,11 +113,15 @@ class BGTaskModelAdmin(admin.ModelAdmin):
                     & Q(started_at__gt=timezone.now() - timedelta(days=1))
                 )
                 | (
+                    Q(state=BackgroundTask.STATES.queued)
+                    & Q(queued_at__gt=timezone.now() - timedelta(days=1))
+                )
+                | (
                     ~Q(state=BackgroundTask.STATES.not_started)
                     & Q(completed_at__gt=timezone.now() - timedelta(hours=2))
                 )
             )
-            .order_by("-started_at")
+            .order_by("-started_at", "-queued_at")
         )
         for bgt in bgts:
             bgt.admin_description = task_name_to_desc[bgt.name]

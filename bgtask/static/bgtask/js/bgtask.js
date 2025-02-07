@@ -2,6 +2,7 @@ window.BG_TASK_ADDED = true;
 
 const STATE_TO_EMOJI = {
     "not_started": "⏱️",
+    "queued": "⋯",
     "running": "🏃🏽‍♀️",
     "success": "✅",
     "partial_success": "⚠️",
@@ -201,10 +202,14 @@ class TaskProgressDiv {
         this._showProgress();
         this._hideState();
         break;
+      case "queued":
+        this._hideProgress();
+        this._showState();
+        break;
     }
 
     const isOutOfDate = (
-      !["success", "partial_success", "not_started", "failed"].includes(task.state)
+      !["success", "queued", "partial_success", "not_started", "failed"].includes(task.state)
       && (new Date() - task.updated) > OUT_OF_DATE_PERIOD_S * 1000
     );
 
@@ -212,9 +217,19 @@ class TaskProgressDiv {
       this._addTitle("This task has not been updated for a while");
     }
 
-    this.stateEle.innerHTML = `${STATE_TO_EMOJI[task.state] || "❓"}`;
+    this._setStateEmoji(task);
 
     this.pgstate.update({ max: task.steps_to_complete, value: task.steps_completed, isOutOfDate });
+  }
+
+  _setStateEmoji(task) {
+    this.stateEle.innerHTML = `${STATE_TO_EMOJI[task.state] || "❓"}`;
+
+    switch (task.state) {
+      case "queued":
+        this.stateEle.innerHTML += ` (${task.position_in_queue})`;
+        break;
+    }
   }
 
   _addTitle(title) {
@@ -445,7 +460,7 @@ class BGTaskPoller {
       for (const cbk of (this.taskCallbacks[task.id] || [])) {
         cbk(task);
       }
-      if (task.state !== "running") {
+      if (!['running', 'queued'].includes(task.state)) {
         this.stopMonitoringTask(task.id);
       }
     }
