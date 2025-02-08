@@ -38,9 +38,11 @@ def locked(meth):
     return _locked_meth
 
 
-def only_if_state(state):
+def only_if_state(state, no_op_states=frozenset()):
     def only_if_state_decorator(meth):
-        def only_if_state_wrapper(self, *args, **kwargs):
+        def only_if_state_wrapper(self, *args, no_op_if_already_in_state=False, **kwargs):
+            if self.state in no_op_states:
+                return
             states = (state,) if isinstance(state, str) else tuple(state)
             if self.state not in states:
                 raise RuntimeError(
@@ -143,6 +145,11 @@ class BackgroundTask(models.Model):
             queued_at__lt=self.queued_at, state=self.STATES.queued
         ).count()
 
+    def set_steps_to_complete(self, steps_to_complete):
+        self.steps_to_complete = steps_to_complete
+        self.steps_completed = 0
+        self.save()
+
     @contextmanager
     def runs_single_step(self):
         try:
@@ -161,6 +168,14 @@ class BackgroundTask(models.Model):
         else:
             self.succeed()
 
+    @contextmanager
+    def fails_if_exception(self):
+        try:
+            yield
+        except Exception as exc:
+            self.fail(exc)
+            raise
+
     @locked
     @only_if_state(STATES.not_started)
     def queue(self):
@@ -170,7 +185,13 @@ class BackgroundTask(models.Model):
         self.save()
 
     @locked
-    @only_if_state((STATES.not_started, STATES.queued))
+    @only_if_state(
+        (STATES.not_started, STATES.queued),
+        # Allow start() to be called while running so that if a task's subtasks are queued and
+        # asynchronous each can call .start() independently so the first one that is executed will
+        # start the task.
+        no_op_states=(STATES.running,),
+    )
     def start(self):
         log.info("Background Task starting: %s", self.id)
         self.state = self.STATES.running
