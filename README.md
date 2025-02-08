@@ -39,3 +39,4 @@ urlpatterns = [
 from bgtask.models import BackgroundTask
 
 BackgroundTask.new(name)
+```
