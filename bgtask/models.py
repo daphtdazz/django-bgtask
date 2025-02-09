@@ -201,7 +201,7 @@ class BackgroundTask(models.Model):
         self.save()
 
     @locked
-    @only_if_state(STATES.running)
+    @only_if_state((STATES.queued, STATES.running))
     def fail(self, exc):
         """Call to indicate a complete and final failure of the task"""
         log.info("Background Task failed: %s %s", self.id, exc)
