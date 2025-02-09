@@ -1,4 +1,4 @@
-import functools
+import collections
 import logging
 import os
 import time
@@ -8,63 +8,52 @@ from contextlib import contextmanager
 
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
-from django.db import models, transaction
+from django.db import models
 from django.forms.models import model_to_dict
 from django.utils import timezone
 
 from model_utils import Choices
 
+from .utils import locked, only_if_state, q_or
+
 
 log = logging.getLogger(__name__)
 
 
-def locked(meth):
-    @functools.wraps(meth)
-    def _locked_meth(self, *args, **kwargs):
-        if getattr(self, "_locked", False):
-            return meth(self, *args, **kwargs)
+class BackgroundTaskQuerySet(models.QuerySet):
+    def add_position_in_queue(self):
+        """This evaluates the queryset and adds position_in_queue to each one (which requires
+        more DB queries).
+        """
+        recent_unqueued_task_by_nsn = {(task.namespace, task.name): None for task in self}
+        for ns, name in recent_unqueued_task_by_nsn:
+            recent_unqueued_task_by_nsn[(ns, name)] = BackgroundTask.most_recently_unqueued_task(
+                ns, name
+            )
 
-        with transaction.atomic():
-            BackgroundTask.objects.filter(id=self.id).select_for_update().only("id").get()
-            self.refresh_from_db()
+        queued_tasks_by_nsn = BackgroundTask.queued_tasks_in_order_by_nsn_like(self)
 
-            # Mark as locked in case we are called recursively
-            self._locked = True
-            try:
-                return meth(self, *args, **kwargs)
-            finally:
-                self._locked = False
+        for task in self:
+            if task.state != task.STATES.queued:
+                continue
 
-    return _locked_meth
+            unqueued_task = recent_unqueued_task_by_nsn[(task.namespace, task.name)]
+            if unqueued_task is not None and task.queued_at < unqueued_task.queued_at:
+                # More recently queued task has already been dispatched so we should be going...
+                task.position_in_queue = 0
+                continue
 
+            task.position_in_queue = 0
+            for queued_task in queued_tasks_by_nsn[(task.namespace, task.name)]:
+                if queued_task.queued_at >= task.queued_at:
+                    break
+                task.position_in_queue += 1
 
-def only_if_state(state, no_op_states=frozenset()):
-    def only_if_state_decorator(meth):
-        def only_if_state_wrapper(self, *args, no_op_if_already_in_state=False, **kwargs):
-            if self.state in no_op_states:
-                return
-            states = (state,) if isinstance(state, str) else tuple(state)
-            if self.state not in states:
-                raise RuntimeError(
-                    "%s cannot execute %s as in state %s not one of %s"
-                    % (self, meth.__name__, self.state, states)
-                )
-            return meth(self, *args, **kwargs)
-
-        return only_if_state_wrapper
-
-    return only_if_state_decorator
+        return self
 
 
 class BackgroundTask(models.Model):
     id = models.UUIDField(primary_key=True, editable=False, default=uuid.uuid4)
-    name = models.CharField(
-        max_length=1000,
-        help_text=(
-            "Name (or type) of this task, is not unique "
-            "per task instance but generally per task functionality"
-        ),
-    )
     namespace = models.CharField(
         max_length=1000,
         default="",
@@ -72,6 +61,13 @@ class BackgroundTask(models.Model):
         help_text=(
             "Optional namespace that can be used to avoid having to make names unique across an "
             "entire codebase, allowing them to be shorter and human readable"
+        ),
+    )
+    name = models.CharField(
+        max_length=1000,
+        help_text=(
+            "Name (or type) of this task, is not unique "
+            "per task instance but generally per task functionality"
         ),
     )
 
@@ -102,8 +98,14 @@ class BackgroundTask(models.Model):
     created = models.DateTimeField(auto_now_add=True)
     updated = models.DateTimeField(auto_now=True)
 
+    objects = models.Manager.from_queryset(BackgroundTaskQuerySet)()
+
     class Meta:
         ordering = ["created", "id"]
+
+    # This needs to be added dynamically to model instances, and is done by
+    # BackgroundTaskQuerySet.add_position_in_queue()
+    position_in_queue = None
 
     @property
     def task_dict(self):
@@ -111,7 +113,7 @@ class BackgroundTask(models.Model):
         return {
             "id": str(self.id),
             "updated": self.updated.isoformat(),
-            "position_in_queue": self.get_position_in_queue(),
+            "position_in_queue": self.position_in_queue,
             **task_dict,
         }
 
@@ -123,27 +125,27 @@ class BackgroundTask(models.Model):
     def incomplete(self):
         return self.state in [self.STATES.not_started, self.STATES.running]
 
-    def get_position_in_queue(self):
-        if self.state != self.STATES.queued:
-            return None
+    @classmethod
+    def most_recently_unqueued_task(cls, namespace, name):
+        return (
+            cls.objects.filter(queued_at__isnull=False, namespace=namespace, name=name)
+            .exclude(state=cls.STATES.not_started)
+            .exclude(state=cls.STATES.queued)
+            .order_by("-queued_at")
+            .first()
+        )
 
-        if (
-            BackgroundTask.objects.filter(
-                queued_at__gt=self.queued_at,
-            )
-            .exclude(state=self.STATES.not_started)
-            .exclude(state=self.STATES.queued)
-            .exists()
+    @classmethod
+    def queued_tasks_in_order_by_nsn_like(cls, tasks):
+        queued_by_nsn = collections.defaultdict(list)
+        nsns = {(task.namespace, task.name) for task in tasks}
+        for task in (
+            cls.objects.filter(queued_at__isnull=False, state=cls.STATES.queued)
+            .filter(q_or(models.Q(namespace=nsn[0], name=nsn[1]) for nsn in nsns))
+            .order_by("queued_at")
         ):
-            # More recent tasks have started, assume we're next (either that or we're stuck)
-            return 0
-
-        # Otherwise approximate queue position as the number of tasks that were queued before us
-        # and are still in the queue. So if there is nothing in front of us we are 0 in the queue.
-        assert self.queued_at
-        return BackgroundTask.objects.filter(
-            queued_at__lt=self.queued_at, state=self.STATES.queued
-        ).count()
+            queued_by_nsn[(task.namespace, task.name)].append(task)
+        return queued_by_nsn
 
     def set_steps_to_complete(self, steps_to_complete):
         self.steps_to_complete = steps_to_complete

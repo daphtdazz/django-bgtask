@@ -103,7 +103,7 @@ class BGTaskModelAdmin(admin.ModelAdmin):
         if not task_name_to_desc:
             return BackgroundTask.objects.none()
 
-        bgts = list(
+        bgts = (
             BackgroundTask.objects.filter(
                 name__in=task_name_to_desc, namespace=self._bgtask_namespace
             )
@@ -123,6 +123,7 @@ class BGTaskModelAdmin(admin.ModelAdmin):
             )
             .order_by("-started_at", "-queued_at")
         )
+        bgts.add_position_in_queue()
         for bgt in bgts:
             bgt.admin_description = task_name_to_desc[bgt.name]
 

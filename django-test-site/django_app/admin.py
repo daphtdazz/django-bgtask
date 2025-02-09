@@ -78,7 +78,9 @@ class ModelWithBackgroundActionsAdmin(BGTaskModelAdmin):
             default_backend.dispatch(self.execute_queued_task, obj, bgtask)
 
     def execute_queued_task(self, obj, task):
-        while pos_in_queue := task.get_position_in_queue():
+        while pos_in_queue := (
+            type(task).objects.filter(id=task.id).add_position_in_queue().get().position_in_queue
+        ):
             log.info("Not first in queue, sleeping %s", pos_in_queue)
             time.sleep(3)
 
